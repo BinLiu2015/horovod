@@ -102,7 +102,7 @@ def _make_spark_thread(spark_context, spark_job_group, driver, result_queue,
 
 
 def run(fn, args=(), kwargs={}, num_proc=None, start_timeout=None, extra_mpi_args=None, env=None,
-        stdout=None, stderr=None, verbose=1, nic=None, run_func=safe_shell_exec.execute):
+        stdout=None, stderr=None, verbose=1, nics=None, run_func=safe_shell_exec.execute):
     """
     Runs Horovod in Spark.  Runs `num_proc` processes executing `fn` using the same amount of Spark tasks.
 
@@ -119,7 +119,7 @@ def run(fn, args=(), kwargs={}, num_proc=None, start_timeout=None, extra_mpi_arg
         stdout: Horovod stdout is redirected to this stream. Defaults to sys.stdout.
         stderr: Horovod stderr is redirected to this stream. Defaults to sys.stderr.
         verbose: Debug output verbosity (0-2). Defaults to 1.
-        nic: specify the NIC for tcp network communication.
+        nics: comma separated list of NICs for tcp network communication.
         run_func: Run function to use. Must have arguments 'command', 'env', 'stdout', 'stderr'.
                   Defaults to safe_shell_exec.execute.
 
@@ -141,7 +141,7 @@ def run(fn, args=(), kwargs={}, num_proc=None, start_timeout=None, extra_mpi_arg
                                      extra_mpi_args=extra_mpi_args,
                                      key=secret.make_secret_key(),
                                      timeout=tmout,
-                                     nic=nic,
+                                     nics=nics,
                                      run_func_mode=True)
 
     spark_context = pyspark.SparkContext._active_spark_context
