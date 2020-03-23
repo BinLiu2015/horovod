@@ -276,12 +276,12 @@ def gloo_run(settings, remote_host_names, nics, env, server_ip, command):
         'HOROVOD_CONTROLLER=gloo '
         'HOROVOD_CPU_OPERATIONS=gloo '
         'HOROVOD_GLOO_IFACE={iface} '
-        'NCCL_SOCKET_IFNAME={common_intfs} '
+        'NCCL_SOCKET_IFNAME={nics} '
         '{command}'  # expect a lot of environment variables
         .format(addr=server_ip,
                 port=global_rendezv_port,
                 iface=iface,  # TODO: add multiple ifaces in future
-                common_intfs=','.join(nics),
+                nics=','.join(nics),
                 command=' '.join(quote(par) for par in command)))
 
     _launch_jobs(settings, env, host_alloc_plan, remote_host_names, run_command)

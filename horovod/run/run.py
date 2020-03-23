@@ -908,7 +908,7 @@ def run(
         use_gloo=None,
         use_mpi=None,
         mpi_args=None,
-        network_interface=None):
+        network_interfaces=None):
     """
     Launch a Horovod job to run the specified process function and get the return value.
 
@@ -947,7 +947,7 @@ def run(
     :param use_mpi: Run Horovod using the MPI controller. This will
                     be the default if Horovod was built with MPI support.
     :param mpi_args: Extra arguments for the MPI controller. This is only used when use_mpi is True.
-    :param network_interface: Network interfaces to use for communication separated by comma. If
+    :param network_interfaces: Network interfaces to use for communication separated by comma. If
                              not specified, Horovod will find the common NICs among all the
                              workers and use those; example, eth0,eth1.
     :return: Return a list which contains values return by all Horovod processes.
