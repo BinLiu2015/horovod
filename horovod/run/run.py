@@ -268,13 +268,13 @@ def _driver_fn(all_host_names, local_host_names, settings):
         driver.shutdown()
 
 
-def _get_driver_ip(interfaces):
+def _get_driver_ip(nics):
     """
-    :param interfaces: set of potential network interfaces that can be used
+    :param nics: set of potential network interfaces that can be used
     :return: driver ip. We make sure all workers can connect to this ip.
     """
     driver_ip = None
-    ifaces = [iface for iface in list(interfaces) if iface in net_if_addrs()]
+    ifaces = [iface for iface in list(nics) if iface in net_if_addrs()]
 
     for iface in ifaces:
         for addr in net_if_addrs()[iface]:
@@ -431,9 +431,9 @@ def parse_args():
                              'specify the initialization timeout.')
 
     parser.add_argument('--network-interfaces', action='store', dest='nics',
-                        help='Network interfaces to use for communication separated by comma. If '
-                             'not specified, Horovod will find the common NICs among all the '
-                             'workers and use it; example, --nics eth0,eth1.')
+                        help='Network interfaces that can be used for communication separated by '
+                             'comma. If not specified, Horovod will find the common NICs among all '
+                             'the workers and use it; example, --nics eth0,eth1.')
 
     parser.add_argument('--output-filename', action='store',
                         help='For Gloo, writes stdout / stderr of all processes to a filename of the form '
@@ -862,26 +862,26 @@ def _run(args):
         return None
 
 
-def _launch_job(args, remote_host_names, settings, common_intfs, command):
+def _launch_job(args, remote_host_names, settings, nics, command):
     env = os.environ.copy()
     config_parser.set_env_from_args(env, args)
-    driver_ip = _get_driver_ip(common_intfs)
+    driver_ip = _get_driver_ip(nics)
 
     if args.use_gloo:
         if not gloo_built(verbose=(settings.verbose >= 2)):
             raise ValueError('Gloo support has not been built.  If this is not expected, ensure CMake is installed '
                              'and reinstall Horovod with HOROVOD_WITH_GLOO=1 to debug the build error.')
-        gloo_run(settings, remote_host_names, common_intfs, env, driver_ip, command)
+        gloo_run(settings, remote_host_names, nics, env, driver_ip, command)
     elif args.use_mpi:
         if not mpi_built(verbose=(settings.verbose >= 2)):
             raise ValueError('MPI support has not been built.  If this is not expected, ensure MPI is installed '
                              'and reinstall Horovod with HOROVOD_WITH_MPI=1 to debug the build error.')
-        mpi_run(settings, common_intfs, env, command)
+        mpi_run(settings, nics, env, command)
     else:
         if mpi_built(verbose=(settings.verbose >= 2)):
-            mpi_run(settings, common_intfs, env, command)
+            mpi_run(settings, nics, env, command)
         elif gloo_built(verbose=(settings.verbose >= 2)):
-            gloo_run(settings, remote_host_names, common_intfs, env, driver_ip, command)
+            gloo_run(settings, remote_host_names, nics, env, driver_ip, command)
         else:
             raise ValueError('Neither MPI nor Gloo support has been built. Try reinstalling Horovod ensuring that '
                              'either MPI is installed (MPI) or CMake is installed (Gloo).')
