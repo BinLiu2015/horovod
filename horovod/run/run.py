@@ -217,7 +217,7 @@ def _driver_fn(all_host_names, local_host_names, settings):
     # Launch a TCP server called service service on the host running
     # horovodrun.
     driver = driver_service.HorovodRunDriverService(
-        settings.num_hosts, settings.key, settings.nic)
+        settings.num_hosts, settings.key, settings.nics)
     if settings.verbose >= 2:
         print('Launched horovodrun server.')
     # Have all the workers register themselves with the service service.
@@ -430,8 +430,10 @@ def parse_args():
                              'HOROVOD_START_TIMEOUT can also be used to '
                              'specify the initialization timeout.')
 
-    parser.add_argument('--network-interface', action='store', dest='nic',
-                        help='Specify the network interface used for communication.')
+    parser.add_argument('--network-interfaces', action='store', dest='nics',
+                        help='Network interfaces to use for communication separated by comma. If '
+                             'not specified, Horovod will find the common NICs among all the '
+                             'workers and use it; example, --nics eth0,eth1.')
 
     parser.add_argument('--output-filename', action='store',
                         help='For Gloo, writes stdout / stderr of all processes to a filename of the form '
@@ -612,12 +614,6 @@ def parse_args():
                                   help='Run Horovod using the MPI controller. This will '
                                        'be the default if Horovod was built with MPI support.')
 
-    parser.add_argument('--btl_tcp_if_include', action='store', dest='btl_tcp_if_include',
-                        help='Network interfaces to use for communication '
-                             'separated by comma. If not specified, Horovod will '
-                             'find the common NICs among all the workers and use '
-                             'it. Example, --btl_tcp_if_include eth0,eth1')
-
     args = parser.parse_args()
 
     if args.config_file:
@@ -642,7 +638,7 @@ class HorovodArgs(object):
         self.command = None
         self.run_func = None
         self.config_file = None
-        self.nic = None
+        self.nics = None
 
         # tuneable parameter arguments
         self.fusion_threshold_mb = None
@@ -709,6 +705,18 @@ def parse_host_files(filename):
     return ','.join(hosts)
 
 
+def parse_host_names(hosts):
+    host_list = hosts.split(',')
+    all_host_names = []
+    pattern = re.compile(r'^[\w.-]+:\d+$')
+    for host in host_list:
+        if not pattern.match(host.strip()):
+            raise ValueError('Invalid host input, please make sure it has '
+                             'format as : worker-0:2,worker-1:2.')
+        all_host_names.append(host.strip().split(':')[0])
+    return all_host_names
+
+
 def _run(args):
     if args.check_build:
         check_build(args.verbose)
@@ -722,14 +730,9 @@ def _run(args):
             # Set hosts to localhost if not specified
             args.hosts = 'localhost:{np}'.format(np=args.np)
 
-    host_list = args.hosts.split(',')
-    all_host_names = []
-    pattern = re.compile(r'^[\w.-]+:\d+$')
-    for host in host_list:
-        if not pattern.match(host.strip()):
-            raise ValueError('Invalid host input, please make sure it has '
-                             'format as : worker-0:2,worker-1:2.')
-        all_host_names.append(host.strip().split(':')[0])
+    all_host_names = parse_host_names(args.hosts)
+
+    nics_set = set(args.nics.split(',')) if args.nics else None
 
     # horovodrun has to finish all the checks before this timeout runs out.
     if args.start_timeout:
@@ -755,7 +758,7 @@ def _run(args):
                                      hosts=args.hosts,
                                      output_filename=args.output_filename,
                                      run_func_mode=args.run_func is not None,
-                                     nic=args.nic)
+                                     nics=nics_set)
 
     # This cache stores the results of checks performed by horovodrun
     # during the initialization step. It can be disabled by setting
@@ -789,11 +792,10 @@ def _run(args):
             print('SSH was successful into all the remote hosts.')
 
     if len(remote_host_names) > 0:
-        if args.btl_tcp_if_include:
-            # If btl_tcp_if_include is provided, we will use those interfaces. All the workers
+        if args.nics:
+            # If args.nics is provided, we will use those interfaces. All the workers
             # must have at least one of those interfaces available.
-            btl_tcp_if_include = args.btl_tcp_if_include.split(',')
-            common_intfs = set(nic for nic in btl_tcp_if_include if nic)
+            nics = settings.nics
         else:
             # Find the set of common, routed interfaces on all the hosts (remote
             # and local) and specify it in the args to be used by NCCL. It is
@@ -803,12 +805,12 @@ def _run(args):
                 print('Testing interfaces on all the hosts.')
 
             local_host_names = set(all_host_names) - set(remote_host_names)
-            common_intfs = _driver_fn(all_host_names, local_host_names,
+            nics = _driver_fn(all_host_names, local_host_names,
                                       settings, fn_cache=fn_cache)
 
             if settings.verbose >= 2:
                 print('Interfaces on all the hosts were successfully checked.')
-                print('Common interface found: ' + ' '.join(common_intfs))
+                print('Common interface found: ' + ' '.join(nics))
 
     else:
         if settings.verbose >= 2:
@@ -816,23 +818,23 @@ def _run(args):
                   'with address 127.0.0.1')
         # If all the given hosts are local, find the interfaces with address
         # 127.0.0.1
-        common_intfs = set()
+        nics = set()
         for iface, addrs in net_if_addrs().items():
-            if settings.nic and iface != settings.nic:
+            if settings.nics and iface not in settings.nics:
                 continue
             for addr in addrs:
                 if addr.family == AF_INET and addr.address == '127.0.0.1':
-                    common_intfs.add(iface)
+                    nics.add(iface)
                     break
 
-        if len(common_intfs) == 0:
+        if len(nics) == 0:
             raise ValueError('No interface is found for address 127.0.0.1.')
 
         if settings.verbose >= 2:
-            print('Local interface found ' + ' '.join(common_intfs))
+            print('Local interface found ' + ' '.join(nics))
 
     # get the driver IPv4 address
-    driver_ip = _get_driver_ip(common_intfs)
+    driver_ip = _get_driver_ip(nics)
 
     if args.run_func:
         run_func_server = KVStoreServer(verbose=settings.verbose)
@@ -844,7 +846,7 @@ def _run(args):
         command = [sys.executable, '-m', 'horovod.run.run_task', str(driver_ip), str(run_func_server_port)]
 
         try:
-            _launch_job(args, remote_host_names, settings, common_intfs, command)
+            _launch_job(args, remote_host_names, settings, nics, command)
             results = [None] * args.np
             # TODO: make it parallel to improve performance
             for i in range(args.np):
@@ -856,7 +858,7 @@ def _run(args):
             run_func_server.shutdown_server()
     else:
         command = args.command
-        _launch_job(args, remote_host_names, settings, common_intfs, command)
+        _launch_job(args, remote_host_names, settings, nics, command)
         return None
 
 
@@ -945,8 +947,9 @@ def run(
     :param use_mpi: Run Horovod using the MPI controller. This will
                     be the default if Horovod was built with MPI support.
     :param mpi_args: Extra arguments for the MPI controller. This is only used when use_mpi is True.
-    :param network_interface: Specify the network interface for communication.
-
+    :param network_interface: Network interfaces to use for communication separated by comma. If
+                             not specified, Horovod will find the common NICs among all the
+                             workers and use those; example, eth0,eth1.
     :return: Return a list which contains values return by all Horovod processes.
              The index of the list corresponds to the rank of each Horovod process.
     """
@@ -976,7 +979,7 @@ def run(
     hargs.verbose = verbose
     hargs.use_gloo = use_gloo
     hargs.use_mpi = use_mpi
-    hargs.nic = network_interface
+    hargs.nics = network_interfaces
 
     hargs.run_func = wrapped_func
 

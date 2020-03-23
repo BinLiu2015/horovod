@@ -37,7 +37,7 @@ if platform.system() == 'Darwin':
 
 
 def _task_fn(index, driver_addresses, settings):
-    task = task_service.SparkTaskService(index, settings.key, settings.nic)
+    task = task_service.SparkTaskService(index, settings.key, settings.nics)
     try:
         driver_client = driver_service.SparkDriverClient(driver_addresses, settings.key, settings.verbose)
         driver_client.register_task(index, task.addresses(), host_hash.host_hash())
@@ -162,7 +162,7 @@ def run(fn, args=(), kwargs={}, num_proc=None, start_timeout=None, extra_mpi_arg
 
     spark_job_group = 'horovod.spark.run.%d' % job_id.next_job_id()
     driver = driver_service.SparkDriverService(settings.num_proc, fn, args, kwargs,
-                                               settings.key, settings.nic)
+                                               settings.key, settings.nics)
     spark_thread = _make_spark_thread(spark_context, spark_job_group, driver,
                                       result_queue, settings)
     try:
